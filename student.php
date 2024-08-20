@@ -75,6 +75,16 @@ switch ($op) {
 			courseList($studentsDid, $_REQUEST['sid']);
 		}
 		break;
+	case 'chooseStudent':
+		if (!isset($_REQUEST['sid'])) {
+			echo 'Please first choose a student from the list below<br>';
+			studentList($_REQUEST['sid'] ?? '', $_GET['col'] ?? 'sid', $_GET['direct'] ?? 'ASC', $_GET['pageno'] ?? '1');
+		} else {
+
+			studentList($_REQUEST['sid'], $_GET['col'] ?? 'sid', $_GET['direct'] ?? 'ASC', $_GET['pageno'] ?? '1');
+		}
+		break;
+
 	default:
 		studentList($_REQUEST['sid'] ?? '', $_GET['col'] ?? 'sid', $_GET['direct'] ?? 'ASC', $_GET['pageno'] ?? '1');
 }
@@ -96,7 +106,7 @@ function connectToDB()
 function menu()
 {
 	global $connect;
-	$sid = $_REQUEST['sid'] ?? '';
+	$sid = $_REQUEST['sid'] ?? '1';
 	echo "
     <h4>Main Menu</h4>
     <a href='?op=list&sid=$sid'>Student list</a><br>
@@ -106,14 +116,26 @@ function menu()
     <a href='?op=studentSchedule&sid=$sid'>Weekly Schedule</a><br><br>";
 
 	if ($sid) {
-		$stmt = $connect->prepare("SELECT * FROM student WHERE sid = ? LIMIT 1");
+		// Query to join student and take tables to get the grade
+		$stmt = $connect->prepare("
+            SELECT student.sid, student.fname, student.lname, take.grade ,d.dname
+            FROM student
+            LEFT JOIN take ON student.sid = take.sid 
+			LEFT JOIN department d ON student.did = d.did
+            WHERE student.sid = ? 
+            LIMIT 1
+        ");
 		$stmt->bind_param('i', $sid);
 		$stmt->execute();
 		$result = $stmt->get_result();
 		$stdRow = $result->fetch_assoc();
-		echo "<span style='color:green;'>No: {$stdRow['sid']} Name: {$stdRow['fname']} {$stdRow['lname']}</span><br>";
+
+		// If there are multiple records due to the join, you may want to handle that
+		$grade = $stdRow['grade'] ?? 'N/A'; // Default to 'N/A' if grade is not set
+		echo "<span style='color:green;'>Sid: {$stdRow['sid']} Name: {$stdRow['fname']} {$stdRow['lname']} DPT: {$stdRow['dname']} GPA: {$grade}</span><br>";
 	}
 }
+
 
 function selection($studentsDid, $sid)
 {
@@ -137,32 +159,86 @@ function selection($studentsDid, $sid)
 function courseList($did, $sid)
 {
 	global $connect;
-	$stmt = $connect->prepare("SELECT * FROM course WHERE did = ?");
+	$stmt = $connect->prepare("
+        SELECT c.cid, c.title, c.credits, t.fname AS teacher_fname, t.lname AS teacher_lname
+        FROM course c
+        JOIN teach te ON c.cid = te.cid
+        JOIN teacher t ON te.tid = t.tid
+        WHERE c.did = ?
+    ");
 	$stmt->bind_param('i', $did);
 	$stmt->execute();
 	$result = $stmt->get_result();
 
-	echo "<table border='1'><tr><th>Code</th><th>Title</th><th>Credits</th><th>Take</th></tr>";
+	echo "<table border='1'><tr><th>Code</th><th>Title</th><th>Credits</th><th>Teacher</th><th>Take</th></tr>";
 	while ($row = $result->fetch_assoc()) {
-		echo "<tr><td>{$row['cid']}</td><td>{$row['title']}</td><td>{$row['credits']}</td><td><a href='?op=takeCourse&sid={$sid}&cid={$row['cid']}'>choose</a></td></tr>";
+		$teacherName = $row['teacher_fname'] . ' ' . $row['teacher_lname'];
+		echo "<tr>
+            <td>{$row['cid']}</td>
+            <td>{$row['title']}</td>
+            <td>{$row['credits']}</td>
+            <td>{$teacherName}</td>
+            <td><a href='?op=takeCourse&sid={$sid}&cid={$row['cid']}'>choose</a></td>
+        </tr>";
 	}
 	echo '</table>';
 }
+
 
 function chosenCourses($sid)
 {
 	global $connect;
-	$stmt = $connect->prepare("SELECT * FROM take t JOIN course c ON t.cid = c.cid WHERE t.sid = ?");
+	$stmt = $connect->prepare("
+        SELECT ta.cid, c.title, c.credits, t.fname AS teacher_fname, t.lname AS teacher_lname, SUM(c.credits) OVER() AS summ
+        FROM take ta 
+        JOIN course c ON ta.cid = c.cid
+        JOIN teach te ON c.cid = te.cid
+        JOIN teacher t ON te.tid = t.tid
+        WHERE ta.sid = ?
+    ");
 	$stmt->bind_param('i', $sid);
 	$stmt->execute();
 	$result = $stmt->get_result();
 
-	echo "<table border='1'><tr><th>Code</th><th>Title</th><th>Credits</th><th>Delete</th></tr>";
+	$totalCredits = 0;
+	$courses = []; // Store all rows temporarily
+
+	// Fetch the data
 	while ($row = $result->fetch_assoc()) {
-		echo "<tr><td>{$row['cid']}</td><td>{$row['title']}</td><td>{$row['credits']}</td><td><a href='?op=deleteCourse&sid={$sid}&cid={$row['cid']}'>delete</a></td></tr>";
+		$courses[] = $row; // Store each row in an array
+		if ($totalCredits == 0) {
+			$totalCredits = $row['summ']; // Store the total credits from the first row
+		}
+	}
+
+	// Display the total credits above the table
+	echo "<span style='color:green;'>Total Credits: {$totalCredits}</span>";
+
+	// Generate the table
+	echo "<table border='1'>
+    <tr>
+    <th>Code</th>
+    <th>Title</th>
+    <th>Credits</th>
+    <th>Teacher</th>
+    <th>Delete</th>
+    </tr>";
+
+	foreach ($courses as $row) {
+		$teacherName = $row['teacher_fname'] . ' ' . $row['teacher_lname'];
+		echo "<tr>
+            <td>{$row['cid']}</td>
+            <td>{$row['title']}</td>
+            <td>{$row['credits']}</td>
+            <td>{$teacherName}</td>
+            <td><a href='?op=deleteCourse&sid={$sid}&cid={$row['cid']}'>delete</a></td>
+        </tr>";
 	}
 	echo '</table>';
 }
+
+
+
 
 function updateStudent($sid, $fname, $lname, $did, $birthdate, $email)
 {
@@ -212,28 +288,71 @@ function deleteCourse($sid, $cid)
 function updateForm($sid)
 {
 	global $connect;
-	$stmt = $connect->prepare("SELECT student.*, department.email,department.dname FROM student JOIN department ON student.did = department.did WHERE sid = ? LIMIT 1");
+
+	// Fetch student information
+	$stmt = $connect->prepare("SELECT student.*, department.email, department.dname, department.did 
+        FROM student 
+        JOIN department ON student.did = department.did 
+        WHERE student.sid = ? LIMIT 1");
 	$stmt->bind_param('i', $sid);
 	$stmt->execute();
 	$result = $stmt->get_result();
 	$row = $result->fetch_assoc();
 
+	// Fetch department list
+	$deptStmt = $connect->prepare("SELECT did, dname FROM department");
+	$deptStmt->execute();
+	$deptResult = $deptStmt->get_result();
+
+	// Start the form
 	echo "<form method='GET'>
-    <table>
-    <tr><td colspan='2'>Update Student </td></tr>
-    <tr><td>Sid</td><td><input type='text' readonly name='sid' value='{$row['sid']}'></td></tr>
-    <tr><td>Firstname</td><td><input type='text' name='fname' value='{$row['fname']}'></td></tr>
-    <tr><td>Lastname</td><td><input type='text' name='lname' value='{$row['lname']}'></td></tr>
-    <tr><td>Birth Date</td><td><input type='date' name='birthdate' value='{$row['birthdate']}'></td></tr>
-	<tr><td>Did</td><td><input type='text' name='did' value='{$row['did']}'></td></tr>
-    <tr><td>Dept</td><td><input type='text' name='dname' value='{$row['dname']}'></td></tr>
-    <tr><td>Email</td><td><input type='text' name='email' value='{$row['email']}'></td></tr>
-    <tr><td></td><td><input type='submit' name='gonder' value='Save'>
-	<a href='?op=list'>Home</a></td></tr>
+    <table border='1'>
+        <tr>
+		<td rowspan='4'  id='picture'>
+                    <label for='fileInput' style='display: block; text-align: center;cursor: pointer;'>
+					<img src='placeholder-image.png' alt='Picture Here' style='width: 100px; height: 100px;'></label>
+                    <input type='file' id='fileInput' style='opacity: 0;position: absolute;'  name='picture' accept='image/*'>
+                </td>
+            <td>Firstname</td>
+            <td>
+                <input type='text' name='fname' value='{$row['fname']}'>
+            </td>
+			
+		<td>Firstname</td>
+            <td>
+                <input type='text' name='lname' value='{$row['lname']}'>
+            </td>
+
+            
+        </tr>
+        <tr>
+            <td>Sid</td>
+            <td><input type='text'  name='sid' value='{$row['sid']}'></td>
+            <td>Birthdate</td>
+             <td><input type='date' name='birthdate' value='{$row['birthdate']}'></td>
+        </tr>
+        <tr>
+            <td>Email</td>
+            <td><input type='email' name='email' value='{$row['email']}'></td>
+        </tr>
+        <tr>
+            <td>Dept</td>
+            <td>
+                <select name='did'>";
+	// Populate the select box with departments
+	while ($deptRow = $deptResult->fetch_assoc()) {
+		$selected = ($deptRow['did'] == $row['did']) ? ' selected ' : '';
+		echo "<option value='{$deptRow['did']}'{$selected}>{$deptRow['dname']}</option>";
+	}
+	echo "</select>
+            </td>
+            <td><input type='submit' name='gonder' value='SAVE'> <a href='?op=list'>Home</a></td>
+        </tr>
     </table>
     <input type='hidden' name='op' value='update'>
-    </form>";
+</form>";
 }
+
 
 
 
@@ -246,17 +365,26 @@ function studentList($sidChosen, $col, $dir, $pageNo)
 	$stmt->execute();
 	$result = $stmt->get_result();
 
-	echo "<table border='1'><tr><th><a href='?op=list&col=sid&direct=" . ($dir == 'ASC' ? 'DESC' : 'ASC') . "'>sid</a></th>
-        <th><a href='?op=list&col=fname&direct=" . ($dir == 'ASC' ? 'DESC' : 'ASC') . "'>fname</a></th>
-        <th><a href='?op=list&col=lname&direct=" . ($dir == 'ASC' ? 'DESC' : 'ASC') . "'>lname</a></th>
-        <th><a href='?op=list&col=dname&direct=" . ($dir == 'ASC' ? 'DESC' : 'ASC') . "'>Dept</a></th>
-        <th>delete</th></tr>";
+	echo "<table border='1'>
+    <tr>
+        <th><a href='?op=list&col=sid&direct=" . ($dir == 'ASC' ? 'DESC' : 'ASC') . "&pageno=$pageNo'>sid</a></th>
+        <th><a href='?op=list&col=fname&direct=" . ($dir == 'ASC' ? 'DESC' : 'ASC') . "&pageno=$pageNo'>fname</a></th>
+        <th><a href='?op=list&col=lname&direct=" . ($dir == 'ASC' ? 'DESC' : 'ASC') . "&pageno=$pageNo'>lname</a></th>
+        <th><a href='?op=list&col=dname&direct=" . ($dir == 'ASC' ? 'DESC' : 'ASC') . "&pageno=$pageNo'>Dept</a></th>
+        <th>delete</th>
+    </tr>";
 
 	while ($row = $result->fetch_assoc()) {
 		// If the current row is the chosen student, apply a different background color
 		$bgColor = ($sidChosen == $row['sid']) ? "style='background-color: yellow;'" : "";
-		echo "<tr $bgColor><td>{$row['sid']}</td><td>{$row['fname']}</td><td>{$row['lname']}</td><td>{$row['dname']}</td>
-			<td>" . ($sidChosen != $row['sid'] ? "<a href='?op=chooseStudent&sid={$row['sid']}'>choose</a>" : "Chosen") . "</td></tr>";
+		echo "
+        <tr $bgColor>
+            <td>{$row['sid']}</td>
+            <td>{$row['fname']}</td>
+            <td>{$row['lname']}</td>
+            <td>{$row['dname']}</td>
+            <td>" . ($sidChosen != $row['sid'] ? "<a href='?op=chooseStudent&sid={$row['sid']}&pageno=$pageNo&col=$col&direct=$dir'>choose</a>" : "Chosen") . "</td>
+        </tr>";
 	}
 	echo '</table>';
 
@@ -274,6 +402,7 @@ function studentList($sidChosen, $col, $dir, $pageNo)
 }
 
 
+
 function scheduleStudent($id, $sql)
 {
 	global $connect;
@@ -286,7 +415,7 @@ function scheduleStudent($id, $sql)
 	$schedule = array_fill_keys(range('8', '16'), $Days);
 
 	while ($row = $result->fetch_assoc()) {
-		$hour = (int)$row['hourOfDay'];
+		$hour = (int) $row['hourOfDay'];
 		$day = $row['dayOfWeek'];
 		if (isset($Days[$day])) {
 			$schedule[$hour][$day] =
@@ -299,7 +428,14 @@ function scheduleStudent($id, $sql)
 	echo "<table border='1'>";
 	echo "<tr><td>Hour</td><td>Mon</td><td>Tue</td><td>Wed</td><td>Thu</td><td>Fri</td></tr>";
 	foreach ($schedule as $hour => $days) {
-		echo "<tr><td>$hour</td><td>{$days['M']}&nbsp;</td><td>{$days['T']}&nbsp;</td><td>{$days['W']}&nbsp;</td><td>{$days['H']}&nbsp;</td><td>{$days['F']}&nbsp;</td></tr>";
+		echo "<tr>
+		<td>$hour</td>
+		<td>{$days['M']}&nbsp;</td>
+		<td>{$days['T']}&nbsp;</td>
+		<td>{$days['W']}&nbsp;</td>
+		<td>{$days['H']}&nbsp;</td>
+		<td>{$days['F']}&nbsp;</td>
+		</tr>";
 	}
 	echo '</table>';
 }
@@ -316,4 +452,3 @@ function getStudentDid($sid)
 }
 
 mysqli_close($connect);
-exit;
