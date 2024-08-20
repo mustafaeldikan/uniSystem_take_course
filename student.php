@@ -413,13 +413,13 @@ function studentList($sidChosen, $col, $dir, $pageNo)
 
 
 
-function scheduleStudent($id, $sql)
+function scheduleStudent($sid, $sql)
 {
     global $connect, $op;
     $op = $_REQUEST['op'] ?? '';
 
     $stmt = $connect->prepare($sql);
-    $stmt->bind_param('i', $id);
+    $stmt->bind_param('i', $sid);
     $stmt->execute();
     $result = $stmt->get_result();
 
@@ -433,9 +433,9 @@ function scheduleStudent($id, $sql)
         $day = $row['dayOfWeek'];
         if (isset($Days[$day])) {
             $schedule[$hour][$day] =
-                "<a href=?op=courseSchedule&cid={$row['cid']}>{$row['cid']} {$row['title']}</a><br>
-                <a href=?op=roomSchedule&rid={$row['rid']}>{$row['description']}</a><br>
-                <a href=?op=teacherSchedule&tid={$row['tid']}>{$row['fname']} {$row['lname']}</a>";
+                "<a href=?op=courseSchedule&sid=$sid&cid={$row['cid']}>{$row['cid']} {$row['title']}</a><br>
+                <a href=?op=roomSchedule&sid=$sid&rid={$row['rid']}>{$row['description']}</a><br>
+                <a href=?op=teacherSchedule&sid=$sid&tid={$row['tid']}>{$row['fname']} {$row['lname']}</a>";
         }
 
         // Set the header based on the operation
