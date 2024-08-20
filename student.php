@@ -105,8 +105,9 @@ function connectToDB()
 
 function menu()
 {
-	global $connect;
+	global $connect,$op;
 	$sid = $_REQUEST['sid'] ?? '1';
+	$op = $_REQUEST['op'] ?? '';
 	echo "
     <h4>Main Menu</h4>
     <a href='?op=list&sid=$sid'>Student list</a><br>
@@ -128,11 +129,16 @@ function menu()
 		$stmt->bind_param('i', $sid);
 		$stmt->execute();
 		$result = $stmt->get_result();
-		$stdRow = $result->fetch_assoc();
-
-		// If there are multiple records due to the join, you may want to handle that
-		$grade = $stdRow['grade'] ?? 'N/A'; // Default to 'N/A' if grade is not set
-		echo "<span style='color:green;'>Sid: {$stdRow['sid']} Name: {$stdRow['fname']} {$stdRow['lname']} DPT: {$stdRow['dname']} GPA: {$grade}</span><br>";
+		if ($result->num_rows > 0) {
+            while ($stdRow = $result->fetch_assoc()) {
+                if ($op =='studentSchedule'||$op =='chooseCourse'||$op =='chosenCourses') {
+                    $grade = $stdRow['grade'] ?? 'N/A'; // Default to 'N/A' if grade is not set
+                    echo "<span style='color:green;'>Sid: {$stdRow['sid']} Name: {$stdRow['fname']} {$stdRow['lname']} DPT: {$stdRow['dname']} GPA: {$grade}</span><br>";
+                }
+            }
+        } else {
+            echo "No student data found.";
+        }
 	}
 }
 
@@ -187,7 +193,8 @@ function courseList($did, $sid)
 
 function chosenCourses($sid)
 {
-	global $connect;
+	global $connect,$op;
+	$op = $_REQUEST['op'] ?? '';
 	$stmt = $connect->prepare("
         SELECT ta.cid, c.title, c.credits, t.fname AS teacher_fname, t.lname AS teacher_lname, SUM(c.credits) OVER() AS summ
         FROM take ta 
@@ -212,7 +219,10 @@ function chosenCourses($sid)
 	}
 
 	// Display the total credits above the table
-	echo "<span style='color:green;'>Total Credits: {$totalCredits}</span>";
+
+		echo "<span style='color:green;'>Total Credits: {$totalCredits}</span>";
+	
+	
 
 	// Generate the table
 	echo "<table border='1'>
@@ -405,40 +415,58 @@ function studentList($sidChosen, $col, $dir, $pageNo)
 
 function scheduleStudent($id, $sql)
 {
-	global $connect;
-	$stmt = $connect->prepare($sql);
-	$stmt->bind_param('i', $id);
-	$stmt->execute();
-	$result = $stmt->get_result();
+    global $connect, $op;
+    $op = $_REQUEST['op'] ?? '';
 
-	$Days = ['M' => '', 'T' => '', 'W' => '', 'H' => '', 'F' => ''];
-	$schedule = array_fill_keys(range('8', '16'), $Days);
+    $stmt = $connect->prepare($sql);
+    $stmt->bind_param('i', $id);
+    $stmt->execute();
+    $result = $stmt->get_result();
 
-	while ($row = $result->fetch_assoc()) {
-		$hour = (int) $row['hourOfDay'];
-		$day = $row['dayOfWeek'];
-		if (isset($Days[$day])) {
-			$schedule[$hour][$day] =
-				"<a href=?op=courseSchedule&sid=$id&cid={$row['cid']}>{$row['cid']} {$row['title']}</a><br>
-				<a href=?op=roomSchedule&sid=$id&rid={$row['rid']}>{$row['description']}</a><br>
-				<a href=?op=teacherSchedule&sid=$id&tid={$row['tid']}>{$row['fname']} {$row['lname']}</a>";
-		}
-	}
+    $Days = ['M' => '', 'T' => '', 'W' => '', 'H' => '', 'F' => ''];
+    $schedule = array_fill_keys(range('8', '16'), $Days);
 
-	echo "<table border='1'>";
-	echo "<tr><td>Hour</td><td>Mon</td><td>Tue</td><td>Wed</td><td>Thu</td><td>Fri</td></tr>";
-	foreach ($schedule as $hour => $days) {
-		echo "<tr>
-		<td>$hour</td>
-		<td>{$days['M']}&nbsp;</td>
-		<td>{$days['T']}&nbsp;</td>
-		<td>{$days['W']}&nbsp;</td>
-		<td>{$days['H']}&nbsp;</td>
-		<td>{$days['F']}&nbsp;</td>
-		</tr>";
-	}
-	echo '</table>';
+    $header = ''; // Initialize a variable to hold the header content
+
+    while ($row = $result->fetch_assoc()) {
+        $hour = (int) $row['hourOfDay'];
+        $day = $row['dayOfWeek'];
+        if (isset($Days[$day])) {
+            $schedule[$hour][$day] =
+                "<a href=?op=courseSchedule&cid={$row['cid']}>{$row['cid']} {$row['title']}</a><br>
+                <a href=?op=roomSchedule&rid={$row['rid']}>{$row['description']}</a><br>
+                <a href=?op=teacherSchedule&tid={$row['tid']}>{$row['fname']} {$row['lname']}</a>";
+        }
+
+        // Set the header based on the operation
+        if ($op == 'courseSchedule') {
+            $header = "<span style='color:green;'>Weekly Schedule for Course: {$row['cid']} {$row['title']}</span><br>";
+        } elseif ($op == 'teacherSchedule') {
+            $header = "<span style='color:green;'>Weekly Schedule for Instructor: {$row['fname']} {$row['lname']}</span><br>";
+        } elseif ($op == 'roomSchedule') {
+            $header = "<span style='color:green;'>Weekly Schedule for Room: {$row['description']}</span><br>";
+        }
+    }
+
+    // Output the header
+    echo $header;
+
+    // Output the schedule table
+    echo "<table border='1'>";
+    echo "<tr><td>Hour</td><td>Mon</td><td>Tue</td><td>Wed</td><td>Thu</td><td>Fri</td></tr>";
+    foreach ($schedule as $hour => $days) {
+        echo "<tr>
+        <td>$hour</td>
+        <td>{$days['M']}&nbsp;</td>
+        <td>{$days['T']}&nbsp;</td>
+        <td>{$days['W']}&nbsp;</td>
+        <td>{$days['H']}&nbsp;</td>
+        <td>{$days['F']}&nbsp;</td>
+        </tr>";
+    }
+    echo '</table>';
 }
+
 
 function getStudentDid($sid)
 {
@@ -452,3 +480,4 @@ function getStudentDid($sid)
 }
 
 mysqli_close($connect);
+?>
