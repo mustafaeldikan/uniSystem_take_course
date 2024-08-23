@@ -105,7 +105,7 @@ function connectToDB()
 
 function menu()
 {
-	global $connect,$op;
+	global $connect, $op;
 	$sid = $_REQUEST['sid'] ?? '1';
 	$op = $_REQUEST['op'] ?? '';
 	echo "
@@ -130,15 +130,15 @@ function menu()
 		$stmt->execute();
 		$result = $stmt->get_result();
 		if ($result->num_rows > 0) {
-            while ($stdRow = $result->fetch_assoc()) {
-                if ($op =='studentSchedule'||$op =='chooseCourse'||$op =='chosenCourses') {
-                    $grade = $stdRow['grade'] ?? 'N/A'; // Default to 'N/A' if grade is not set
-                    echo "<span style='color:green;'>Sid: {$stdRow['sid']} Name: {$stdRow['fname']} {$stdRow['lname']} DPT: {$stdRow['dname']} GPA: {$grade}</span><br>";
-                }
-            }
-        } else {
-            echo "No student data found.";
-        }
+			while ($stdRow = $result->fetch_assoc()) {
+				if ($op == 'studentSchedule' || $op == 'chooseCourse' || $op == 'chosenCourses') {
+					$grade = $stdRow['grade'] ?? 'N/A'; // Default to 'N/A' if grade is not set
+					echo "<span style='color:green;'>Sid: {$stdRow['sid']} Name: {$stdRow['fname']} {$stdRow['lname']} DPT: {$stdRow['dname']} GPA: {$grade}</span><br>";
+				}
+			}
+		} else {
+			echo "No student data found.";
+		}
 	}
 }
 
@@ -193,7 +193,7 @@ function courseList($did, $sid)
 
 function chosenCourses($sid)
 {
-	global $connect,$op;
+	global $connect, $op;
 	$op = $_REQUEST['op'] ?? '';
 	$stmt = $connect->prepare("
         SELECT ta.cid, c.title, c.credits, t.fname AS teacher_fname, t.lname AS teacher_lname, SUM(c.credits) OVER() AS summ
@@ -220,9 +220,9 @@ function chosenCourses($sid)
 
 	// Display the total credits above the table
 
-		echo "<span style='color:green;'>Total Credits: {$totalCredits}</span>";
-	
-	
+	echo "<span style='color:green;'>Total Credits: {$totalCredits}</span>";
+
+
 
 	// Generate the table
 	echo "<table border='1'>
@@ -415,47 +415,47 @@ function studentList($sidChosen, $col, $dir, $pageNo)
 
 function scheduleStudent($sid, $sql)
 {
-    global $connect, $op;
-    $op = $_REQUEST['op'] ?? '';
+	global $connect, $op;
+	$op = $_REQUEST['op'] ?? '';
 
-    $stmt = $connect->prepare($sql);
-    $stmt->bind_param('i', $sid);
-    $stmt->execute();
-    $result = $stmt->get_result();
+	$stmt = $connect->prepare($sql);
+	$stmt->bind_param('i', $sid);
+	$stmt->execute();
+	$result = $stmt->get_result();
 
-    $Days = ['M' => '', 'T' => '', 'W' => '', 'H' => '', 'F' => ''];
-    $schedule = array_fill_keys(range('8', '16'), $Days);
+	$Days = ['M' => '', 'T' => '', 'W' => '', 'H' => '', 'F' => ''];
+	$schedule = array_fill_keys(range('8', '16'), $Days);
 
-    $header = ''; // Initialize a variable to hold the header content
+	$header = ''; // Initialize a variable to hold the header content
 
-    while ($row = $result->fetch_assoc()) {
-        $hour = (int) $row['hourOfDay'];
-        $day = $row['dayOfWeek'];
-        if (isset($Days[$day])) {
-            $schedule[$hour][$day] =
-                "<a href=?op=courseSchedule&sid=$sid&cid={$row['cid']}>{$row['cid']} {$row['title']}</a><br>
+	while ($row = $result->fetch_assoc()) {
+		$hour = (int) $row['hourOfDay'];
+		$day = $row['dayOfWeek'];
+		if (isset($Days[$day])) {
+			$schedule[$hour][$day] =
+				"<a href=?op=courseSchedule&sid=$sid&cid={$row['cid']}>{$row['cid']} {$row['title']}</a><br>
                 <a href=?op=roomSchedule&sid=$sid&rid={$row['rid']}>{$row['description']}</a><br>
                 <a href=?op=teacherSchedule&sid=$sid&tid={$row['tid']}>{$row['fname']} {$row['lname']}</a>";
-        }
+		}
 
-        // Set the header based on the operation
-        if ($op == 'courseSchedule') {
-            $header = "<span style='color:green;'>Weekly Schedule for Course: {$row['cid']} {$row['title']}</span><br>";
-        } elseif ($op == 'teacherSchedule') {
-            $header = "<span style='color:green;'>Weekly Schedule for Instructor: {$row['fname']} {$row['lname']}</span><br>";
-        } elseif ($op == 'roomSchedule') {
-            $header = "<span style='color:green;'>Weekly Schedule for Room: {$row['description']}</span><br>";
-        }
-    }
+		// Set the header based on the operation
+		if ($op == 'courseSchedule') {
+			$header = "<span style='color:green;'>Weekly Schedule for Course: {$row['cid']} {$row['title']}</span><br>";
+		} elseif ($op == 'teacherSchedule') {
+			$header = "<span style='color:green;'>Weekly Schedule for Instructor: {$row['fname']} {$row['lname']}</span><br>";
+		} elseif ($op == 'roomSchedule') {
+			$header = "<span style='color:green;'>Weekly Schedule for Room: {$row['description']}</span><br>";
+		}
+	}
 
-    // Output the header
-    echo $header;
+	// Output the header
+	echo $header;
 
-    // Output the schedule table
-    echo "<table border='1'>";
-    echo "<tr><td>Hour</td><td>Mon</td><td>Tue</td><td>Wed</td><td>Thu</td><td>Fri</td></tr>";
-    foreach ($schedule as $hour => $days) {
-        echo "<tr>
+	// Output the schedule table
+	echo "<table border='1'>";
+	echo "<tr><td>Hour</td><td>Mon</td><td>Tue</td><td>Wed</td><td>Thu</td><td>Fri</td></tr>";
+	foreach ($schedule as $hour => $days) {
+		echo "<tr>
         <td>$hour</td>
         <td>{$days['M']}&nbsp;</td>
         <td>{$days['T']}&nbsp;</td>
@@ -463,8 +463,8 @@ function scheduleStudent($sid, $sql)
         <td>{$days['H']}&nbsp;</td>
         <td>{$days['F']}&nbsp;</td>
         </tr>";
-    }
-    echo '</table>';
+	}
+	echo '</table>';
 }
 
 
@@ -480,4 +480,3 @@ function getStudentDid($sid)
 }
 
 mysqli_close($connect);
-?>
