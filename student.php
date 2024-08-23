@@ -57,8 +57,10 @@ switch ($op) {
 		chosenCourses($_GET['sid']);
 		break;
 	case 'takeCourse':
+		$studentsDid = $_REQUEST['did'] ?? getStudentDid($_REQUEST['sid']);
 		takeCourse($_GET['sid'], $_GET['cid']);
-		chosenCourses($_GET['sid']);
+		selection($studentsDid, $_REQUEST['sid']);
+		courseList($studentsDid, $_REQUEST['sid']);
 		break;
 	case 'chosenCourses':
 		chosenCourses($_GET['sid']);
@@ -105,7 +107,7 @@ function connectToDB()
 
 function menu()
 {
-	global $connect, $op;
+	global $connect,$op;
 	$sid = $_REQUEST['sid'] ?? '1';
 	$op = $_REQUEST['op'] ?? '';
 	echo "
@@ -130,15 +132,15 @@ function menu()
 		$stmt->execute();
 		$result = $stmt->get_result();
 		if ($result->num_rows > 0) {
-			while ($stdRow = $result->fetch_assoc()) {
-				if ($op == 'studentSchedule' || $op == 'chooseCourse' || $op == 'chosenCourses') {
-					$grade = $stdRow['grade'] ?? 'N/A'; // Default to 'N/A' if grade is not set
-					echo "<span style='color:green;'>Sid: {$stdRow['sid']} Name: {$stdRow['fname']} {$stdRow['lname']} DPT: {$stdRow['dname']} GPA: {$grade}</span><br>";
-				}
-			}
-		} else {
-			echo "No student data found.";
-		}
+            while ($stdRow = $result->fetch_assoc()) {
+                if ($op =='studentSchedule'||$op =='chooseCourse'||$op =='chosenCourses') {
+                    $grade = $stdRow['grade'] ?? 'N/A'; // Default to 'N/A' if grade is not set
+                    echo "<span style='color:green;'>Sid: {$stdRow['sid']} Name: {$stdRow['fname']} {$stdRow['lname']} DPT: {$stdRow['dname']} GPA: {$grade}</span><br>";
+                }
+            }
+        } else {
+            echo "No student data found.";
+        }
 	}
 }
 
@@ -150,29 +152,45 @@ function selection($studentsDid, $sid)
 	$stmt->execute();
 	$result = $stmt->get_result();
 
-	echo "<form action='?' method='POST'>
+	echo "<form action='?' method='GET'>
     <select name='did'>";
+	echo "<option value='all'>all</option>";
 	while ($row = $result->fetch_assoc()) {
 		echo "<option value='{$row['did']}'" . ($row['did'] == $studentsDid ? ' selected ' : '') . ">{$row['dname']}</option>";
 	}
 	echo "</select>
-    <input type='submit' name='ok' value='SHOW COURSES'><br>
+    <input type='submit' value='SHOW COURSES'><br>
     <input type='hidden' name='op' value='chooseCourse'>
     <input type='hidden' name='sid' value='$sid'>
     </form>";
 }
 
+function isCourseSelected($sid, $cid){
+	// echo $sid, ',', $cid, '\n';
+	global $connect;
+	$stmt = $connect->prepare("SELECT * FROM take WHERE sid = $sid AND cid = $cid");
+	$stmt->execute();
+	$stmt->store_result();
+	return $stmt->num_rows > 0;
+}
+
 function courseList($did, $sid)
 {
 	global $connect;
-	$stmt = $connect->prepare("
+	$sql = "
         SELECT c.cid, c.title, c.credits, t.fname AS teacher_fname, t.lname AS teacher_lname
         FROM course c
         JOIN teach te ON c.cid = te.cid
         JOIN teacher t ON te.tid = t.tid
-        WHERE c.did = ?
-    ");
-	$stmt->bind_param('i', $did);
+    ";
+	if($did === 'all'){
+		$stmt = $connect->prepare($sql);
+	}
+	else{
+		$sql = $sql . "WHERE c.did = ?";
+		$stmt = $connect->prepare($sql);
+		$stmt->bind_param('i', $did);
+	}
 	$stmt->execute();
 	$result = $stmt->get_result();
 
@@ -183,9 +201,15 @@ function courseList($did, $sid)
             <td>{$row['cid']}</td>
             <td>{$row['title']}</td>
             <td>{$row['credits']}</td>
-            <td>{$teacherName}</td>
-            <td><a href='?op=takeCourse&sid={$sid}&cid={$row['cid']}'>choose</a></td>
-        </tr>";
+            <td>{$teacherName}</td>";
+		if(isCourseSelected($sid, $row['cid'])){
+			echo "<td>chosen</td>";
+		}
+		else{
+			echo "<td><a href='?op=takeCourse&did={$did}&sid={$sid}&cid={$row['cid']}'>choose</a></td>";
+		}
+
+        echo "</tr>";
 	}
 	echo '</table>';
 }
@@ -193,7 +217,7 @@ function courseList($did, $sid)
 
 function chosenCourses($sid)
 {
-	global $connect, $op;
+	global $connect,$op;
 	$op = $_REQUEST['op'] ?? '';
 	$stmt = $connect->prepare("
         SELECT ta.cid, c.title, c.credits, t.fname AS teacher_fname, t.lname AS teacher_lname, SUM(c.credits) OVER() AS summ
@@ -219,10 +243,10 @@ function chosenCourses($sid)
 	}
 
 	// Display the total credits above the table
-
-	echo "<span style='color:green;'>Total Credits: {$totalCredits}</span>";
-
-
+	if ($op =='chosenCourses'||$op =='studentSchedule') {
+		echo "<span style='color:green;'>Total Credits: {$totalCredits}</span>";
+	}
+	
 
 	// Generate the table
 	echo "<table border='1'>
@@ -413,49 +437,49 @@ function studentList($sidChosen, $col, $dir, $pageNo)
 
 
 
-function scheduleStudent($sid, $sql)
+function scheduleStudent($id, $sql)
 {
-	global $connect, $op;
-	$op = $_REQUEST['op'] ?? '';
+    global $connect, $op;
+    $op = $_REQUEST['op'] ?? '';
 
-	$stmt = $connect->prepare($sql);
-	$stmt->bind_param('i', $sid);
-	$stmt->execute();
-	$result = $stmt->get_result();
+    $stmt = $connect->prepare($sql);
+    $stmt->bind_param('i', $id);
+    $stmt->execute();
+    $result = $stmt->get_result();
 
-	$Days = ['M' => '', 'T' => '', 'W' => '', 'H' => '', 'F' => ''];
-	$schedule = array_fill_keys(range('8', '16'), $Days);
+    $Days = ['M' => '', 'T' => '', 'W' => '', 'H' => '', 'F' => ''];
+    $schedule = array_fill_keys(range('8', '16'), $Days);
 
-	$header = ''; // Initialize a variable to hold the header content
+    $header = ''; // Initialize a variable to hold the header content
 
-	while ($row = $result->fetch_assoc()) {
-		$hour = (int) $row['hourOfDay'];
-		$day = $row['dayOfWeek'];
-		if (isset($Days[$day])) {
-			$schedule[$hour][$day] =
-				"<a href=?op=courseSchedule&sid=$sid&cid={$row['cid']}>{$row['cid']} {$row['title']}</a><br>
-                <a href=?op=roomSchedule&sid=$sid&rid={$row['rid']}>{$row['description']}</a><br>
-                <a href=?op=teacherSchedule&sid=$sid&tid={$row['tid']}>{$row['fname']} {$row['lname']}</a>";
-		}
+    while ($row = $result->fetch_assoc()) {
+        $hour = (int) $row['hourOfDay'];
+        $day = $row['dayOfWeek'];
+        if (isset($Days[$day])) {
+            $schedule[$hour][$day] =
+                "<a href=?op=courseSchedule&cid={$row['cid']}>{$row['cid']} {$row['title']}</a><br>
+                <a href=?op=roomSchedule&rid={$row['rid']}>{$row['description']}</a><br>
+                <a href=?op=teacherSchedule&tid={$row['tid']}>{$row['fname']} {$row['lname']}</a>";
+        }
 
-		// Set the header based on the operation
-		if ($op == 'courseSchedule') {
-			$header = "<span style='color:green;'>Weekly Schedule for Course: {$row['cid']} {$row['title']}</span><br>";
-		} elseif ($op == 'teacherSchedule') {
-			$header = "<span style='color:green;'>Weekly Schedule for Instructor: {$row['fname']} {$row['lname']}</span><br>";
-		} elseif ($op == 'roomSchedule') {
-			$header = "<span style='color:green;'>Weekly Schedule for Room: {$row['description']}</span><br>";
-		}
-	}
+        // Set the header based on the operation
+        if ($op == 'courseSchedule') {
+            $header = "<span style='color:green;'>Weekly Schedule for Course: {$row['cid']} {$row['title']}</span><br>";
+        } elseif ($op == 'teacherSchedule') {
+            $header = "<span style='color:green;'>Weekly Schedule for Instructor: {$row['fname']} {$row['lname']}</span><br>";
+        } elseif ($op == 'roomSchedule') {
+            $header = "<span style='color:green;'>Weekly Schedule for Room: {$row['description']}</span><br>";
+        }
+    }
 
-	// Output the header
-	echo $header;
+    // Output the header
+    echo $header;
 
-	// Output the schedule table
-	echo "<table border='1'>";
-	echo "<tr><td>Hour</td><td>Mon</td><td>Tue</td><td>Wed</td><td>Thu</td><td>Fri</td></tr>";
-	foreach ($schedule as $hour => $days) {
-		echo "<tr>
+    // Output the schedule table
+    echo "<table border='1'>";
+    echo "<tr><td>Hour</td><td>Mon</td><td>Tue</td><td>Wed</td><td>Thu</td><td>Fri</td></tr>";
+    foreach ($schedule as $hour => $days) {
+        echo "<tr>
         <td>$hour</td>
         <td>{$days['M']}&nbsp;</td>
         <td>{$days['T']}&nbsp;</td>
@@ -463,8 +487,8 @@ function scheduleStudent($sid, $sql)
         <td>{$days['H']}&nbsp;</td>
         <td>{$days['F']}&nbsp;</td>
         </tr>";
-	}
-	echo '</table>';
+    }
+    echo '</table>';
 }
 
 
