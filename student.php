@@ -107,7 +107,7 @@ function connectToDB()
 
 function menu()
 {
-	global $connect,$op;
+	global $connect, $op;
 	$sid = $_REQUEST['sid'] ?? '1';
 	$op = $_REQUEST['op'] ?? '';
 	echo "
@@ -132,15 +132,15 @@ function menu()
 		$stmt->execute();
 		$result = $stmt->get_result();
 		if ($result->num_rows > 0) {
-            while ($stdRow = $result->fetch_assoc()) {
-                if ($op =='studentSchedule'||$op =='chooseCourse'||$op =='chosenCourses') {
-                    $grade = $stdRow['grade'] ?? 'N/A'; // Default to 'N/A' if grade is not set
-                    echo "<span style='color:green;'>Sid: {$stdRow['sid']} Name: {$stdRow['fname']} {$stdRow['lname']} DPT: {$stdRow['dname']} GPA: {$grade}</span><br>";
-                }
-            }
-        } else {
-            echo "No student data found.";
-        }
+			while ($stdRow = $result->fetch_assoc()) {
+				if ($op == 'studentSchedule' || $op == 'chooseCourse' || $op == 'chosenCourses') {
+					$grade = $stdRow['grade'] ?? 'N/A'; // Default to 'N/A' if grade is not set
+					echo "<span style='color:green;'>Sid: {$stdRow['sid']} Name: {$stdRow['fname']} {$stdRow['lname']} DPT: {$stdRow['dname']} GPA: {$grade}</span><br>";
+				}
+			}
+		} else {
+			echo "No student data found.";
+		}
 	}
 }
 
@@ -165,7 +165,8 @@ function selection($studentsDid, $sid)
     </form>";
 }
 
-function isCourseSelected($sid, $cid){
+function isCourseSelected($sid, $cid)
+{
 	// echo $sid, ',', $cid, '\n';
 	global $connect;
 	$stmt = $connect->prepare("SELECT * FROM take WHERE sid = $sid AND cid = $cid");
@@ -183,10 +184,9 @@ function courseList($did, $sid)
         JOIN teach te ON c.cid = te.cid
         JOIN teacher t ON te.tid = t.tid
     ";
-	if($did === 'all'){
+	if ($did === 'all') {
 		$stmt = $connect->prepare($sql);
-	}
-	else{
+	} else {
 		$sql = $sql . "WHERE c.did = ?";
 		$stmt = $connect->prepare($sql);
 		$stmt->bind_param('i', $did);
@@ -202,14 +202,13 @@ function courseList($did, $sid)
             <td>{$row['title']}</td>
             <td>{$row['credits']}</td>
             <td>{$teacherName}</td>";
-		if(isCourseSelected($sid, $row['cid'])){
+		if (isCourseSelected($sid, $row['cid'])) {
 			echo "<td>chosen</td>";
-		}
-		else{
+		} else {
 			echo "<td><a href='?op=takeCourse&did={$did}&sid={$sid}&cid={$row['cid']}'>choose</a></td>";
 		}
 
-        echo "</tr>";
+		echo "</tr>";
 	}
 	echo '</table>';
 }
@@ -217,7 +216,7 @@ function courseList($did, $sid)
 
 function chosenCourses($sid)
 {
-	global $connect,$op;
+	global $connect, $op;
 	$op = $_REQUEST['op'] ?? '';
 	$stmt = $connect->prepare("
         SELECT ta.cid, c.title, c.credits, t.fname AS teacher_fname, t.lname AS teacher_lname, SUM(c.credits) OVER() AS summ
@@ -243,10 +242,10 @@ function chosenCourses($sid)
 	}
 
 	// Display the total credits above the table
-	if ($op =='chosenCourses'||$op =='studentSchedule') {
+	if ($op == 'chosenCourses' || $op == 'studentSchedule') {
 		echo "<span style='color:green;'>Total Credits: {$totalCredits}</span>";
 	}
-	
+
 
 	// Generate the table
 	echo "<table border='1'>
@@ -277,10 +276,13 @@ function chosenCourses($sid)
 function updateStudent($sid, $fname, $lname, $did, $birthdate, $email)
 {
 	global $connect;
-
+	$avatarId = guidv4();
+	$avatarName = $avatarId . ".png";
+	$targetPath = "public/" . basename($avatarName);
+	move_uploaded_file($_FILES['uploadedFile']['tmp_name'], $targetPath);
 	// Update the student table
-	$stmt = $connect->prepare("UPDATE student SET fname = ?, lname = ?, did = ?, birthdate = ? WHERE sid = ?");
-	$stmt->bind_param('ssisi', $fname, $lname, $did, $birthdate, $sid);
+	$stmt = $connect->prepare("UPDATE student SET fname = ?, lname = ?, did = ?, birthdate = ?, avatarId = ? WHERE sid = ?");
+	$stmt->bind_param('ssissi', $fname, $lname, $did, $birthdate, $avatarName, $sid);
 	$stmt->execute();
 	echo $stmt->affected_rows . " student records updated.<br>";
 
@@ -337,15 +339,15 @@ function updateForm($sid)
 	$deptStmt = $connect->prepare("SELECT did, dname FROM department");
 	$deptStmt->execute();
 	$deptResult = $deptStmt->get_result();
-
+	$avatarUrl = $row['avatarId'] ? ("public/" . $row['avatarId']) : "public/placeholder.png";
 	// Start the form
-	echo "<form method='GET'>
+	echo "<form method='POST' enctype='multipart/form-data'>
     <table border='1'>
         <tr>
 		<td rowspan='4'  id='picture'>
                     <label for='fileInput' style='display: block; text-align: center;cursor: pointer;'>
-					<img src='placeholder-image.png' alt='Picture Here' style='width: 100px; height: 100px;'></label>
-                    <input type='file' id='fileInput' style='opacity: 0;position: absolute;'  name='picture' accept='image/*'>
+					<img src='{$avatarUrl}' alt='Picture Here' style='width: 100px; height: 100px;'></label>
+                    <input type='file' id='fileInput' style='opacity: 0;position: absolute;' value='{$row['avatarId']}' name='uploadedFile' accept='image/*'>
                 </td>
             <td>Firstname</td>
             <td>
@@ -439,47 +441,47 @@ function studentList($sidChosen, $col, $dir, $pageNo)
 
 function scheduleStudent($id, $sql)
 {
-    global $connect, $op;
-    $op = $_REQUEST['op'] ?? '';
+	global $connect, $op;
+	$op = $_REQUEST['op'] ?? '';
 
-    $stmt = $connect->prepare($sql);
-    $stmt->bind_param('i', $id);
-    $stmt->execute();
-    $result = $stmt->get_result();
+	$stmt = $connect->prepare($sql);
+	$stmt->bind_param('i', $id);
+	$stmt->execute();
+	$result = $stmt->get_result();
 
-    $Days = ['M' => '', 'T' => '', 'W' => '', 'H' => '', 'F' => ''];
-    $schedule = array_fill_keys(range('8', '16'), $Days);
+	$Days = ['M' => '', 'T' => '', 'W' => '', 'H' => '', 'F' => ''];
+	$schedule = array_fill_keys(range('8', '16'), $Days);
 
-    $header = ''; // Initialize a variable to hold the header content
+	$header = ''; // Initialize a variable to hold the header content
 
-    while ($row = $result->fetch_assoc()) {
-        $hour = (int) $row['hourOfDay'];
-        $day = $row['dayOfWeek'];
-        if (isset($Days[$day])) {
-            $schedule[$hour][$day] =
-                "<a href=?op=courseSchedule&cid={$row['cid']}>{$row['cid']} {$row['title']}</a><br>
+	while ($row = $result->fetch_assoc()) {
+		$hour = (int) $row['hourOfDay'];
+		$day = $row['dayOfWeek'];
+		if (isset($Days[$day])) {
+			$schedule[$hour][$day] =
+				"<a href=?op=courseSchedule&cid={$row['cid']}>{$row['cid']} {$row['title']}</a><br>
                 <a href=?op=roomSchedule&rid={$row['rid']}>{$row['description']}</a><br>
                 <a href=?op=teacherSchedule&tid={$row['tid']}>{$row['fname']} {$row['lname']}</a>";
-        }
+		}
 
-        // Set the header based on the operation
-        if ($op == 'courseSchedule') {
-            $header = "<span style='color:green;'>Weekly Schedule for Course: {$row['cid']} {$row['title']}</span><br>";
-        } elseif ($op == 'teacherSchedule') {
-            $header = "<span style='color:green;'>Weekly Schedule for Instructor: {$row['fname']} {$row['lname']}</span><br>";
-        } elseif ($op == 'roomSchedule') {
-            $header = "<span style='color:green;'>Weekly Schedule for Room: {$row['description']}</span><br>";
-        }
-    }
+		// Set the header based on the operation
+		if ($op == 'courseSchedule') {
+			$header = "<span style='color:green;'>Weekly Schedule for Course: {$row['cid']} {$row['title']}</span><br>";
+		} elseif ($op == 'teacherSchedule') {
+			$header = "<span style='color:green;'>Weekly Schedule for Instructor: {$row['fname']} {$row['lname']}</span><br>";
+		} elseif ($op == 'roomSchedule') {
+			$header = "<span style='color:green;'>Weekly Schedule for Room: {$row['description']}</span><br>";
+		}
+	}
 
-    // Output the header
-    echo $header;
+	// Output the header
+	echo $header;
 
-    // Output the schedule table
-    echo "<table border='1'>";
-    echo "<tr><td>Hour</td><td>Mon</td><td>Tue</td><td>Wed</td><td>Thu</td><td>Fri</td></tr>";
-    foreach ($schedule as $hour => $days) {
-        echo "<tr>
+	// Output the schedule table
+	echo "<table border='1'>";
+	echo "<tr><td>Hour</td><td>Mon</td><td>Tue</td><td>Wed</td><td>Thu</td><td>Fri</td></tr>";
+	foreach ($schedule as $hour => $days) {
+		echo "<tr>
         <td>$hour</td>
         <td>{$days['M']}&nbsp;</td>
         <td>{$days['T']}&nbsp;</td>
@@ -487,8 +489,8 @@ function scheduleStudent($id, $sql)
         <td>{$days['H']}&nbsp;</td>
         <td>{$days['F']}&nbsp;</td>
         </tr>";
-    }
-    echo '</table>';
+	}
+	echo '</table>';
 }
 
 
@@ -504,3 +506,17 @@ function getStudentDid($sid)
 }
 
 mysqli_close($connect);
+
+function guidv4($data = null) {
+    // Generate 16 bytes (128 bits) of random data or use the data passed into the function.
+    $data = $data ?? random_bytes(16);
+    assert(strlen($data) == 16);
+
+    // Set version to 0100
+    $data[6] = chr(ord($data[6]) & 0x0f | 0x40);
+    // Set bits 6-7 to 10
+    $data[8] = chr(ord($data[8]) & 0x3f | 0x80);
+
+    // Output the 36 character UUID.
+    return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
+}
